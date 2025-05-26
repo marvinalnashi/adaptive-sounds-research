@@ -1,15 +1,25 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+
 export default function Controller() {
-    const triggerPhone = async (phone: 'left' | 'right') => {
-        await fetch(`/api/ring?device=${phone}`);
+    const [socket, setSocket] = useState<any>(null);
+
+    useEffect(() => {
+        const s = io();
+        setSocket(s);
+    }, []);
+
+    const triggerPhone = (device: 'left' | 'right') => {
+        socket?.emit("ring", { target: device });
     };
 
     return (
         <div>
             <h1>Controller Mode</h1>
-            <button onClick={() => triggerPhone('left')}>Ring Left Phone</button>
-            <button onClick={() => triggerPhone('right')}>Ring Right Phone</button>
+            <button onClick={() => triggerPhone('left')}>Ring left phone</button>
+            <button onClick={() => triggerPhone('right')}>Ring right phone</button>
         </div>
     );
 }
