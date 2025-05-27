@@ -1,25 +1,31 @@
 'use client';
+import { useEffect, useState } from 'react';
+import Ably from 'ably';
 
-export const dynamic = "force-dynamic";
-import '@/utils/ablyConfig';
-import { useChannel } from '@ably-labs/react-hooks';
+const ably = new Ably.Realtime({
+    key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
+    clientId: 'controller-client',
+});
+
+const channelName = 'ring-channel';
 
 export default function ControllerPage() {
-    const [channel] = useChannel('ring-channel', () => {});
+    const [channel, setChannel] = useState<any>(null);
 
-    const ring = (target: 'left' | 'right') => {
-        channel.publish('ring', { target });
+    useEffect(() => {
+        const ch = ably.channels.get(channelName);
+        setChannel(ch);
+    }, []);
+
+    const ring = (side: 'left' | 'right') => {
+        channel?.publish('ring', side);
     };
 
     return (
-        <main className="text-center p-6">
+        <div className="text-center p-6">
             <h1 className="text-2xl font-bold mb-4">Controller Mode</h1>
-            <button onClick={() => ring('left')} className="m-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
-                Ring Left
-            </button>
-            <button onClick={() => ring('right')} className="m-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
-                Ring Right
-            </button>
-        </main>
+            <button onClick={() => ring('left')} className="m-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Ring Left Phone</button>
+            <button onClick={() => ring('right')} className="m-2 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">Ring Right Phone</button>
+        </div>
     );
 }

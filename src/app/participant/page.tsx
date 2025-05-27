@@ -1,50 +1,48 @@
 'use client';
-
-export const dynamic = "force-dynamic";
-import '@/utils/ablyConfig';
 import { useEffect, useState } from 'react';
-import { Howl } from 'howler';
-import { useChannel } from '@ably-labs/react-hooks';
+import Ably from 'ably';
+
+const ably = new Ably.Realtime({
+    key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
+    clientId: 'participant-client',
+});
+
+const channelName = 'ring-channel';
 
 export default function ParticipantPage() {
-    const [side, setSide] = useState<'left' | 'right' | null>(null);
+    const [side, setSide] = useState<string | null>(null);
     const [ringing, setRinging] = useState(false);
-    const [startTime, setStartTime] = useState<number | null>(null);
-    const [reactionTime, setReactionTime] = useState<number | null>(null);
-
-    const [channel] = useChannel('ring-channel', (message) => {
-        if (message.name === 'ring' && message.data.target === side) {
-            const sound = new Howl({ src: ['/ringtone.mp3'], loop: true });
-            sound.play();
-            setStartTime(Date.now());
-            setRinging(true);
-            setTimeout(() => {
-                sound.stop();
-                setRinging(false);
-            }, 10000);
-        }
-    });
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const s = params.get('side');
-        if (s === 'left' || s === 'right') setSide(s);
-    }, []);
+        const channel = ably.channels.get(channelName);
 
-    const handlePickup = () => {
-        if (startTime) {
-            setReactionTime(Date.now() - startTime);
-            setRinging(false);
-        }
-    };
+        const handler = (message: any) => {
+            if (message.name === 'ring' && message.data === side) {
+                const audio = new Audio('/ringtone.mp3');
+                audio.play();
+                setRinging(true);
+                setTimeout(() => setRinging(false), 5000);
+            }
+        };
 
-    if (!side) return <p className="p-6 text-center">No side specified</p>;
+        channel.subscribe('ring', handler);
+
+        return () => {
+            channel.unsubscribe('ring', handler);
+        };
+    }, [side]);
 
     return (
-        <main className="text-center p-6">
-            <h1 className="text-2xl font-bold">Participant ({side})</h1>
-            {ringing && <button onClick={handlePickup} className="mt-4 px-6 py-2 bg-red-600 text-white rounded hover:bg-red-700">Pickup</button>}
-            {reactionTime !== null && <p className="mt-4">Reaction Time: {reactionTime} ms</p>}
-        </main>
+        <div className="text-center p-6">
+            <h1>Participant Mode</h1>
+            {!side && (
+                <div>
+                    <button onClick={() => setSide('left')}>Set Side: Left</button>
+                    <button onClick={() => setSide('right')}>Set Side: Right</button>
+                </div>
+            )}
+            {side && <p>This device is the <strong>{side}</strong> phone</p>}
+            {ringing && <p>Ringing!</p>}
+        </div>
     );
 }
