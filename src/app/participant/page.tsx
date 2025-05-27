@@ -1,31 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { io } from 'socket.io-client';
 import { Howl } from 'howler';
 
 export default function Participant() {
-    const searchParams = useSearchParams();
-    const side = searchParams?.get("side") as 'left' | 'right' | null;
-
+    const [side, setSide] = useState<'left' | 'right' | null>(null);
     const [socket, setSocket] = useState<any>(null);
     const [isRinging, setIsRinging] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
     const [reactionTime, setReactionTime] = useState<number | null>(null);
 
     useEffect(() => {
-        if (!side) return;
-
-        const s = io();
-        s.emit("join", `participant-${side}`);
-        s.on("trigger-ring", (target: string) => {
-            if (target === side) {
-                playRingtone();
-            }
-        });
-        setSocket(s);
-    }, [side]);
+        const params = new URLSearchParams(window.location.search);
+        const sideParam = params.get("side");
+        if (sideParam === 'left' || sideParam === 'right') {
+            setSide(sideParam);
+            const s = io();
+            s.emit("join", `participant-${sideParam}`);
+            s.on("trigger-ring", (target: string) => {
+                if (target === sideParam) playRingtone();
+            });
+            setSocket(s);
+        }
+    }, []);
 
     const playRingtone = () => {
         const sound = new Howl({
@@ -50,9 +48,8 @@ export default function Participant() {
         }
     };
 
-    if (!side) {
-        return <p style={{ padding: '2rem', textAlign: 'center' }}>Missing participant side (left or right)</p>;
-    }
+    if (!side)
+        return <p style={{ padding: '2rem', textAlign: 'center' }}>Missing participant side</p>;
 
     return (
         <main style={{ textAlign: 'center', padding: '2rem' }}>
