@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Ably from 'ably';
 import { Suspense } from 'react';
@@ -13,27 +13,52 @@ function ParticipantInner() {
     const searchParams = useSearchParams();
     const side = searchParams?.get('side');
     const [ringing, setRinging] = useState(false);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         if (!side) return;
 
         const channel = ably.channels.get('ring-channel');
 
-        const handler = (message: any) => {
+        const ringHandler = (message: any) => {
             if (message.name === 'ring' && message.data?.side === side) {
-                const audio = new Audio('/ringtone.mp3');
-                audio.play();
-                setRinging(true);
-                setTimeout(() => setRinging(false), 5000);
+                if (!ringing) {
+                    const audio = new Audio('/ringtone.mp3');
+                    audio.loop = true;
+                    audio.play();
+                    audioRef.current = audio;
+                    setRinging(true);
+                }
             }
         };
 
-        channel.subscribe('ring', handler);
+        const stopHandler = (message: any) => {
+            if (message.name === 'stop' && message.data?.side === side) {
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                    setRinging(false);
+                }
+            }
+        };
+
+        const resetHandler = () => {
+            setRinging(false);
+            audioRef.current?.pause();
+            audioRef.current = null;
+            window.location.href = '/';
+        };
+
+        channel.subscribe('ring', ringHandler);
+        channel.subscribe('stop', stopHandler);
+        channel.subscribe('reset', resetHandler);
 
         return () => {
-            channel.unsubscribe('ring', handler);
+            channel.unsubscribe('ring', ringHandler);
+            channel.unsubscribe('stop', stopHandler);
+            channel.unsubscribe('reset', resetHandler);
         };
-    }, [side]);
+    }, [side, ringing]);
 
     return (
         <div className="text-center p-6">
