@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = "force-dynamic";
+import '@/utils/ablyConfig';
 import { useChannel } from '@ably-labs/react-hooks';
 
 export default function ControllerPage() {

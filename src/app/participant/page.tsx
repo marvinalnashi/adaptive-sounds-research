@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = "force-dynamic";
+import '@/utils/ablyConfig';
 import { useEffect, useState } from 'react';
 import { Howl } from 'howler';
 import { useChannel } from '@ably-labs/react-hooks';
