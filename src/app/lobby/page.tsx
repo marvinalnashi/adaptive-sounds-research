@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Ably from 'ably';
 
 const ably = new Ably.Realtime({
@@ -12,6 +13,7 @@ const channelName = 'role-selection';
 export default function LobbyPage() {
     const [connectedRoles, setConnectedRoles] = useState<string[]>([]);
     const [role, setRole] = useState<string | null>(null);
+    const router = useRouter();
 
     useEffect(() => {
         const channel = ably.channels.get(channelName);
@@ -29,10 +31,25 @@ export default function LobbyPage() {
         };
     }, [connectedRoles]);
 
+    useEffect(() => {
+        if (
+            role &&
+            connectedRoles.includes('controller') &&
+            connectedRoles.includes('participant-left') &&
+            connectedRoles.includes('participant-right')
+        ) {
+            if (role === 'controller') router.push('/controller');
+            if (role === 'participant-left') router.push('/participant?side=left');
+            if (role === 'participant-right') router.push('/participant?side=right');
+        }
+    }, [role, connectedRoles, router]);
+
     const selectRole = (selectedRole: string) => {
-        setRole(selectedRole);
-        const channel = ably.channels.get(channelName);
-        channel.publish('role', selectedRole);
+        if (!connectedRoles.includes(selectedRole)) {
+            setRole(selectedRole);
+            const channel = ably.channels.get(channelName);
+            channel.publish('role', selectedRole);
+        }
     };
 
     return (

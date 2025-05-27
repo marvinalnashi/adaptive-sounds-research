@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import Ably from 'ably';
 
 const ably = new Ably.Realtime({
@@ -7,18 +7,15 @@ const ably = new Ably.Realtime({
     clientId: 'controller-client',
 });
 
-const channelName = 'ring-channel';
-
 export default function ControllerPage() {
-    const [channel, setChannel] = useState<any>(null);
+    const channelRef = useRef<any>(null);
 
     useEffect(() => {
-        const ch = ably.channels.get(channelName);
-        setChannel(ch);
+        channelRef.current = ably.channels.get('ring-channel');
     }, []);
 
     const ring = (side: 'left' | 'right') => {
-        channel?.publish('ring', side);
+        channelRef.current?.publish('ring', { side });
     };
 
     return (

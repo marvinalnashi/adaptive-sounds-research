@@ -1,23 +1,26 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Ably from 'ably';
+import { Suspense } from 'react';
 
 const ably = new Ably.Realtime({
     key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
     clientId: 'participant-client',
 });
 
-const channelName = 'ring-channel';
-
-export default function ParticipantPage() {
-    const [side, setSide] = useState<string | null>(null);
+function ParticipantInner() {
+    const searchParams = useSearchParams();
+    const side = searchParams?.get('side');
     const [ringing, setRinging] = useState(false);
 
     useEffect(() => {
-        const channel = ably.channels.get(channelName);
+        if (!side) return;
+
+        const channel = ably.channels.get('ring-channel');
 
         const handler = (message: any) => {
-            if (message.name === 'ring' && message.data === side) {
+            if (message.name === 'ring' && message.data?.side === side) {
                 const audio = new Audio('/ringtone.mp3');
                 audio.play();
                 setRinging(true);
@@ -34,15 +37,21 @@ export default function ParticipantPage() {
 
     return (
         <div className="text-center p-6">
-            <h1>Participant Mode</h1>
-            {!side && (
-                <div>
-                    <button onClick={() => setSide('left')}>Set Side: Left</button>
-                    <button onClick={() => setSide('right')}>Set Side: Right</button>
-                </div>
+            <h1 className="text-2xl font-bold mb-4">Participant Mode</h1>
+            {side ? (
+                <p>This device is the <strong>{side}</strong> phone</p>
+            ) : (
+                <p className="text-red-500">Error: side not defined</p>
             )}
-            {side && <p>This device is the <strong>{side}</strong> phone</p>}
-            {ringing && <p>Ringing!</p>}
+            {ringing && <p className="text-green-600 mt-4 font-bold">Ringing!</p>}
         </div>
+    );
+}
+
+export default function ParticipantPage() {
+    return (
+        <Suspense fallback={<p className="text-center">Loading participant mode...</p>}>
+            <ParticipantInner />
+        </Suspense>
     );
 }
