@@ -9,17 +9,18 @@ export default function Controller() {
     useEffect(() => {
         const s = io();
         setSocket(s);
+        s.emit("join", "controller");
     }, []);
 
-    const triggerPhone = (device: 'left' | 'right') => {
-        socket?.emit("ring", { target: device });
+    const triggerPhone = (target: 'left' | 'right') => {
+        socket?.emit("ring", target);
     };
 
     return (
-        <div>
+        <main style={{ textAlign: 'center', padding: '2rem' }}>
             <h1>Controller Mode</h1>
-            <button onClick={() => triggerPhone('left')}>Ring left phone</button>
-            <button onClick={() => triggerPhone('right')}>Ring right phone</button>
-        </div>
+            <button onClick={() => triggerPhone('left')}>Ring left</button>
+            <button onClick={() => triggerPhone('right')}>Ring right</button>
+        </main>
     );
 }

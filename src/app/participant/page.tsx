@@ -1,58 +1,64 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { io } from 'socket.io-client';
 import { Howl } from 'howler';
 
-const sound = new Howl({
-    src: ['/ringtone.mp3'],
-    loop: true,
-});
-
 export default function Participant() {
+    const searchParams = useSearchParams();
+    const side = searchParams?.get("side") as 'left' | 'right' | null;
+
+    const [socket, setSocket] = useState<any>(null);
     const [isRinging, setIsRinging] = useState(false);
     const [startTime, setStartTime] = useState<number | null>(null);
     const [reactionTime, setReactionTime] = useState<number | null>(null);
 
     useEffect(() => {
-        const socket = io();
-        socket.on("connect", () => {
-            console.log("Connected to socket");
-        });
-        socket.on("trigger-ring", (data) => {
-            if (data.target === "left" || data.target === "right") {
-                console.log("Ringing on:", data.target);
-                startRing();
+        if (!side) return;
+
+        const s = io();
+        s.emit("join", `participant-${side}`);
+        s.on("trigger-ring", (target: string) => {
+            if (target === side) {
+                playRingtone();
             }
         });
-    }, []);
+        setSocket(s);
+    }, [side]);
 
-    const startRing = () => {
+    const playRingtone = () => {
+        const sound = new Howl({
+            src: ['/ringtone.mp3'],
+            loop: true,
+            html5: true,
+        });
         sound.play();
-        const now = Date.now();
-        setStartTime(now);
+        setStartTime(Date.now());
         setIsRinging(true);
-    };
 
-    const stopRing = () => {
-        sound.stop();
-        setIsRinging(false);
+        setTimeout(() => {
+            sound.stop();
+        }, 10000);
     };
 
     const handlePickup = () => {
         if (startTime) {
             const reaction = Date.now() - startTime;
             setReactionTime(reaction);
-            console.log('Pickup reaction time (ms):', reaction);
-            stopRing();
+            setIsRinging(false);
         }
     };
 
+    if (!side) {
+        return <p style={{ padding: '2rem', textAlign: 'center' }}>Missing participant side (left or right)</p>;
+    }
+
     return (
-        <div>
-            <h1>Participant Mode</h1>
+        <main style={{ textAlign: 'center', padding: '2rem' }}>
+            <h1>Participant ({side})</h1>
             {isRinging && <button onClick={handlePickup}>Pickup</button>}
             {reactionTime && <p>Reaction time: {reactionTime} ms</p>}
-        </div>
+        </main>
     );
 }
