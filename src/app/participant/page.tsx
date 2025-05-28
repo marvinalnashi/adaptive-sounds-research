@@ -64,7 +64,8 @@ function ParticipantInner() {
     const pickup = () => {
         if (!ringStartTime || !side || !sessionInfo) return;
 
-        const pickupDelay = Date.now() - ringStartTime;
+        const pickupTimestamp = Date.now();
+        const pickupDelay = pickupTimestamp - ringStartTime;
 
         logSessionData({
             sessionId: sessionInfo.sessionId,
@@ -73,7 +74,7 @@ function ParticipantInner() {
             events: [{
                 event: 'pickup',
                 side,
-                timestamp: Timestamp.fromMillis(ringStartTime),
+                timestamp: Timestamp.fromMillis(pickupTimestamp),
                 pickupTimeMs: pickupDelay,
             }],
             adaptiveVolume: sessionInfo.adaptiveVolume,

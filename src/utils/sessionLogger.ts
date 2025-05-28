@@ -4,10 +4,10 @@ import { db } from './firebaseConfig';
 export type Role = 'participant-left' | 'participant-right';
 
 export interface SessionEvent {
-    event: 'pickup' | 'ring' | 'stop';
+    event: 'pickup';
     side: 'left' | 'right';
-    timestamp?: Timestamp;
-    pickupTimeMs?: number;
+    timestamp: Timestamp;
+    pickupTimeMs: number;
 }
 
 export interface SessionDocument {
@@ -16,8 +16,6 @@ export interface SessionDocument {
     userAgent: string;
     adaptiveVolume?: boolean;
     backgroundNoiseLevel?: 1 | 2 | 3;
-    startedAt?: Timestamp;
-    endedAt?: Timestamp;
     events: SessionEvent[];
 }
 
@@ -26,33 +24,34 @@ export async function logSessionData(data: SessionDocument) {
 
     try {
         const docSnap = await getDoc(sessionRef);
-        const timestampedEvents = data.events.map((e) => ({
-            ...e,
-            timestamp: e.timestamp ?? Timestamp.now(),
-        }));
 
-        const delayKey = `pickupDelay${data.role === 'participant-left' ? 'Left' : 'Right'}Ms`;
-        const pickupDelay = data.events.find(e => e.pickupTimeMs)?.pickupTimeMs || null;
+        const delayKey = data.role === 'participant-left' ? 'pickupDelayLeftMs' : 'pickupDelayRightMs';
+        const pickupEvent = data.events.find(e => e.event === 'pickup');
+
+        if (!pickupEvent) return;
+
+        const eventPayload = {
+            ...pickupEvent,
+            timestamp: pickupEvent.timestamp,
+            pickupTimeMs: pickupEvent.pickupTimeMs,
+        };
 
         if (docSnap.exists()) {
             const existing = docSnap.data();
+
             await updateDoc(sessionRef, {
-                endedAt: Timestamp.now(),
                 userAgents: Array.from(new Set([...(existing.userAgents || []), data.userAgent])),
-                events: [...(existing.events || []), ...timestampedEvents],
-                [delayKey]: pickupDelay,
+                events: [...(existing.events || []), eventPayload],
+                [delayKey]: pickupEvent.pickupTimeMs,
             });
         } else {
             await setDoc(sessionRef, {
                 sessionId: data.sessionId,
-                role: data.role,
                 userAgents: [data.userAgent],
-                startedAt: Timestamp.now(),
-                endedAt: Timestamp.now(),
-                events: timestampedEvents,
                 adaptiveVolume: data.adaptiveVolume ?? null,
                 backgroundNoiseLevel: data.backgroundNoiseLevel ?? null,
-                [delayKey]: pickupDelay,
+                events: [eventPayload],
+                [delayKey]: pickupEvent.pickupTimeMs,
             });
         }
 
