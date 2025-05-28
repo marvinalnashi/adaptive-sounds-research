@@ -13,8 +13,7 @@ export interface SessionEvent {
 
 export interface SessionDocument {
     sessionId: string;
-    role: Role;
-    userAgent: string;
+    userAgent?: string;
     adaptiveVolume?: boolean;
     backgroundNoiseLevel?: 1 | 2 | 3;
     startedAt?: Timestamp;
@@ -24,47 +23,61 @@ export interface SessionDocument {
 
 export async function logSessionData(data: SessionDocument) {
     try {
-        if (data.role === 'controller') return;
-
         const sessionRef = doc(db, 'sessions', data.sessionId);
-        const sessionSnap = await getDoc(sessionRef);
+        const snapshot = await getDoc(sessionRef);
 
-        let existing: Partial<SessionDocument> = sessionSnap.exists() ? sessionSnap.data() as SessionDocument : {
-            sessionId: data.sessionId,
-            events: [],
-        };
+        if (!snapshot.exists()) {
+            const initialDoc: SessionDocument = {
+                sessionId: data.sessionId,
+                userAgent: data.userAgent,
+                adaptiveVolume: data.adaptiveVolume,
+                backgroundNoiseLevel: data.backgroundNoiseLevel,
+                startedAt: Timestamp.now(),
+                endedAt: Timestamp.now(),
+                events: data.events.map((e) => ({
+                    ...e,
+                    timestamp: e.timestamp ?? Timestamp.now(),
+                })),
+            };
 
-        const newEvents = data.events.map(e => ({
+            await setDoc(sessionRef, initialDoc);
+            console.log('Session created and logged:', initialDoc);
+            return;
+        }
+
+        const existingData = snapshot.data() as SessionDocument;
+
+        const existingEvents = existingData.events || [];
+        const newEvents = data.events.map((e) => ({
             ...e,
             timestamp: e.timestamp ?? Timestamp.now(),
         }));
-
-        const allEvents = [...(existing.events || []), ...newEvents];
-
-        const pickup = newEvents.find(e => e.event === 'pickup');
-        if (pickup?.timestamp) {
-            const ring = allEvents.find(e =>
-                e.event === 'ring' && e.side === pickup.side
-            );
-            if (ring?.timestamp) {
-                pickup.ringToPickupDurationMs = pickup.timestamp.toMillis() - ring.timestamp.toMillis();
+        const allEvents = [...existingEvents, ...newEvents];
+        
+        for (const event of allEvents) {
+            if (event.event === 'pickup' && event.side && event.timestamp && !event.ringToPickupDurationMs) {
+                const matchingRing = allEvents.find(
+                    (e) => e.event === 'ring' && e.side === event.side && e.timestamp
+                );
+                if (matchingRing?.timestamp) {
+                    event.ringToPickupDurationMs =
+                        event.timestamp.toMillis() - matchingRing.timestamp.toMillis();
+                }
             }
         }
 
-        const mergedDoc: SessionDocument = {
+        const updatedDoc: SessionDocument = {
             sessionId: data.sessionId,
-            userAgent: data.userAgent,
-            role: data.role,
-            adaptiveVolume: data.adaptiveVolume ?? existing.adaptiveVolume,
-            backgroundNoiseLevel: data.backgroundNoiseLevel ?? existing.backgroundNoiseLevel,
-            startedAt: existing.startedAt ?? Timestamp.now(),
+            userAgent: existingData.userAgent ?? data.userAgent,
+            adaptiveVolume: existingData.adaptiveVolume ?? data.adaptiveVolume,
+            backgroundNoiseLevel: existingData.backgroundNoiseLevel ?? data.backgroundNoiseLevel,
+            startedAt: existingData.startedAt ?? Timestamp.now(),
             endedAt: Timestamp.now(),
             events: allEvents,
         };
 
-        await setDoc(sessionRef, mergedDoc);
-        console.log('Session saved:', mergedDoc);
-
+        await setDoc(sessionRef, updatedDoc);
+        console.log('Session updated:', updatedDoc);
     } catch (err) {
         console.error('Failed to log session:', err);
     }
