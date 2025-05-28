@@ -3,39 +3,35 @@
 import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Ably from 'ably';
-import { logSessionData } from '@/utils/sessionLogger';
 import Cookies from 'js-cookie';
 import { Timestamp } from 'firebase/firestore';
+import { logSessionData } from '@/utils/sessionLogger';
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'participant-client' });
+const channel = ably.channels.get('ring-channel');
 
 function ParticipantInner() {
     const searchParams = useSearchParams();
     const side = searchParams?.get('side') as 'left' | 'right' | null;
+
     const [ringing, setRinging] = useState(false);
     const [ringStartTime, setRingStartTime] = useState<number | null>(null);
+    const [sessionInfo, setSessionInfo] = useState<any>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    const sessionCookie = Cookies.get('ably-session');
-    const sessionData = sessionCookie ? JSON.parse(sessionCookie) : {};
-    const sessionId = sessionData.sessionId;
+    const sessionId = JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId;
     const role = side === 'left' ? 'participant-left' : 'participant-right';
 
     useEffect(() => {
-        if (!side || !sessionId) return;
-
-        const channel = ably.channels.get('ring-channel');
-
         const ringHandler = (message: any) => {
             if (message.name === 'ring' && message.data?.side === side) {
-                if (!ringing) {
-                    const audio = new Audio('/ringtone.mp3');
-                    audio.loop = true;
-                    audio.play();
-                    audioRef.current = audio;
-                    setRingStartTime(Date.now());
-                    setRinging(true);
-                }
+                const audio = new Audio('/ringtone.mp3');
+                audio.loop = true;
+                audio.play();
+                audioRef.current = audio;
+                setRingStartTime(message.data.timestamp);
+                setRinging(true);
+                setSessionInfo(message.data);
             }
         };
 
@@ -48,9 +44,9 @@ function ParticipantInner() {
         };
 
         const resetHandler = () => {
-            setRinging(false);
             audioRef.current?.pause();
             audioRef.current = null;
+            setRinging(false);
             window.location.href = '/';
         };
 
@@ -63,29 +59,31 @@ function ParticipantInner() {
             channel.unsubscribe('stop', stopHandler);
             channel.unsubscribe('reset', resetHandler);
         };
-    }, [side, ringing, sessionId]);
+    }, [side]);
 
     const pickup = () => {
-        if (ringing && ringStartTime && side) {
-            const pickupDelay = Date.now() - ringStartTime;
+        if (!ringStartTime || !side || !sessionInfo) return;
 
-            logSessionData({
-                sessionId,
-                role,
-                userAgent: navigator.userAgent,
-                events: [{
-                    event: 'pickup',
-                    side,
-                    pickupTimeMs: pickupDelay,
-                    timestamp: Timestamp.now()
-                }]
-            });
+        const pickupDelay = Date.now() - ringStartTime;
 
-            ably.channels.get('ring-channel').publish('pickup', { side });
-            setRinging(false);
-            audioRef.current?.pause();
-            audioRef.current = null;
-        }
+        logSessionData({
+            sessionId: sessionInfo.sessionId,
+            role,
+            userAgent: navigator.userAgent,
+            events: [{
+                event: 'pickup',
+                side,
+                timestamp: Timestamp.fromMillis(ringStartTime),
+                pickupTimeMs: pickupDelay,
+            }],
+            adaptiveVolume: sessionInfo.adaptiveVolume,
+            backgroundNoiseLevel: sessionInfo.backgroundNoiseLevel
+        });
+
+        channel.publish('pickup', { side });
+        setRinging(false);
+        audioRef.current?.pause();
+        audioRef.current = null;
     };
 
     return (

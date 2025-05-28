@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Ably from 'ably';
-import {Timestamp} from "firebase/firestore";
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'controller-client' });
 const channel = ably.channels.get('ring-channel');
@@ -16,9 +15,7 @@ export default function ControllerPage() {
     const [adaptivity, setAdaptivity] = useState<'yes' | 'no'>('no');
     const [backgroundNoise, setBackgroundNoise] = useState<1 | 2 | 3>(1);
 
-    const sessionCookie = Cookies.get('ably-session');
-    const sessionData = sessionCookie ? JSON.parse(sessionCookie) : null;
-    const sessionId = sessionData?.sessionId;
+    const sessionId = JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId;
 
     useEffect(() => {
         const handlePickup = (message: any) => {
@@ -30,12 +27,20 @@ export default function ControllerPage() {
 
         channel.subscribe('pickup', handlePickup);
         return () => channel.unsubscribe('pickup', handlePickup);
-    }, [ringStartTime]);
+    }, []);
 
     const ringPhone = (side: 'left' | 'right') => {
-        if (ringingSide) return;
+        if (ringingSide || !sessionId) return;
+
         const timestamp = Date.now();
-        channel.publish('ring', { side, timestamp });
+        channel.publish('ring', {
+            side,
+            timestamp,
+            sessionId,
+            adaptiveVolume: adaptivity === 'yes',
+            backgroundNoiseLevel: backgroundNoise,
+        });
+
         setRingingSide(side);
         setRingStartTime(timestamp);
     };
@@ -59,8 +64,8 @@ export default function ControllerPage() {
             <div className="mb-4">
                 <p className="font-semibold">Adaptivity of Ringtone Volume:</p>
                 <div className="space-x-2 mt-2">
-                    <button className={`px-3 py-1 border rounded ${adaptivity === 'yes' ? 'bg-green-300' : 'bg-gray-200'}`} onClick={() => setAdaptivity('yes')}>Yes</button>
-                    <button className={`px-3 py-1 border rounded ${adaptivity === 'no' ? 'bg-red-300' : 'bg-gray-200'}`} onClick={() => setAdaptivity('no')}>No</button>
+                    <button onClick={() => setAdaptivity('yes')} className={`px-3 py-1 border rounded ${adaptivity === 'yes' ? 'bg-green-300' : 'bg-gray-200'}`}>Yes</button>
+                    <button onClick={() => setAdaptivity('no')} className={`px-3 py-1 border rounded ${adaptivity === 'no' ? 'bg-red-300' : 'bg-gray-200'}`}>No</button>
                 </div>
             </div>
 
@@ -68,11 +73,8 @@ export default function ControllerPage() {
                 <p className="font-semibold">Background Noise Level:</p>
                 <div className="space-x-2 mt-2">
                     {[1, 2, 3].map((level) => (
-                        <button
-                            key={level}
-                            className={`px-3 py-1 border rounded ${backgroundNoise === level ? 'bg-blue-300' : 'bg-gray-200'}`}
-                            onClick={() => setBackgroundNoise(level as 1 | 2 | 3)}
-                        >
+                        <button key={level} onClick={() => setBackgroundNoise(level as 1 | 2 | 3)}
+                                className={`px-3 py-1 border rounded ${backgroundNoise === level ? 'bg-blue-300' : 'bg-gray-200'}`}>
                             {level}
                         </button>
                     ))}
@@ -82,11 +84,13 @@ export default function ControllerPage() {
             <div className="space-y-4">
                 {(['left', 'right'] as const).map((side) => (
                     <div key={side}>
-                        <button className="px-4 py-2 bg-blue-500 text-white rounded" onClick={() => ringPhone(side)} disabled={ringingSide !== null}>
+                        <button onClick={() => ringPhone(side)} disabled={ringingSide !== null}
+                                className="px-4 py-2 bg-blue-500 text-white rounded">
                             Ring {side === 'left' ? 'Left' : 'Right'} Phone
                         </button>
                         {ringingSide === side && (
-                            <button className="ml-2 px-4 py-2 bg-red-500 text-white rounded" onClick={() => stopRing(side)}>
+                            <button onClick={() => stopRing(side)}
+                                    className="ml-2 px-4 py-2 bg-red-500 text-white rounded">
                                 Stop Ringing
                             </button>
                         )}
