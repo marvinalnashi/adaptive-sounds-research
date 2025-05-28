@@ -17,11 +17,12 @@ export interface SessionLog {
 
 export async function logSessionData(data: SessionLog) {
     try {
-        await addDoc(collection(db, 'sessions'), {
+        const log: Omit<SessionLog, 'timestamp'> & { timestamp: Timestamp } = {
             ...data,
-            timestamp: data.timestamp || Timestamp.now(),
-        });
-        console.log('Session data logged:', data);
+            timestamp: data.timestamp ?? Timestamp.now(),
+        };
+        await addDoc(collection(db, 'sessions'), log);
+        console.log('Session data logged:', log);
     } catch (err) {
         console.error('Failed to log session:', err);
     }
