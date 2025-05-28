@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
-import { useChannel } from '@ably-labs/react-hooks';
+import Ably from 'ably';
 import { logSessionData } from '@/utils/sessionLogger';
+
+const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'controller-client' });
+const channel = ably.channels.get('ring-channel');
 
 export default function ControllerPage() {
     const router = useRouter();
@@ -18,50 +21,58 @@ export default function ControllerPage() {
     const sessionId = sessionData?.sessionId || '';
     const role = sessionData?.role || 'controller';
 
-    const { channel } = useChannel('ring-channel', (message) => {
-        if (message.name === 'pickup') {
-            const pickupTime = Date.now();
-            const pickupDuration = ringStartTime ? pickupTime - ringStartTime : null;
+    useEffect(() => {
+        const handlePickup = (message: any) => {
+            if (message.name === 'pickup') {
+                const pickupTime = Date.now();
+                const duration = ringStartTime ? pickupTime - ringStartTime : null;
 
-            logSessionData({
-                sessionId,
-                role,
-                userAgent: navigator.userAgent,
-                event: 'stop',
-                side: message.data.side,
-            });
+                logSessionData({
+                    sessionId,
+                    role,
+                    userAgent: navigator.userAgent,
+                    event: 'pickup',
+                    side: message.data.side,
+                    pickupTimeMs: duration || undefined,
+                });
 
-            if (pickupDuration !== null) {
-                console.log(`Pickup duration (${message.data.side}):`, pickupDuration, 'ms');
+                setRingingSide(null);
+                setRingStartTime(null);
             }
+        };
 
-            setRingingSide(null);
-            setRingStartTime(null);
-        }
-    });
+        channel.subscribe('pickup', handlePickup);
 
-    const ringPhone = (side: 'left' | 'right') => {
-        if (ringingSide === side) return;
+        return () => {
+            channel.unsubscribe('pickup', handlePickup);
+        };
+    }, [ringStartTime]);
 
-        channel.publish('ring', { side });
+    const ringPhone = async (side: 'left' | 'right') => {
+        if (ringingSide) return;
+        const timestamp = Date.now();
+
+        channel.publish('ring', { side, timestamp });
         setRingingSide(side);
-        setRingStartTime(Date.now());
+        setRingStartTime(timestamp);
 
-        logSessionData({
+        await logSessionData({
             sessionId,
             role,
             userAgent: navigator.userAgent,
             event: 'ring',
             side,
+            adaptiveVolume: adaptivity === 'yes',
+            backgroundNoiseLevel: backgroundNoise,
         });
     };
 
-    const stopRing = (side: 'left' | 'right') => {
+    const stopRing = async (side: 'left' | 'right') => {
         channel.publish('stop', { side });
         setRingingSide(null);
         setRingStartTime(null);
 
-        logSessionData({
+        await logSessionData({
             sessionId,
             role,
             userAgent: navigator.userAgent,
@@ -70,8 +81,8 @@ export default function ControllerPage() {
         });
     };
 
-    const exitSession = () => {
-        logSessionData({
+    const exitSession = async () => {
+        await logSessionData({
             sessionId,
             role,
             userAgent: navigator.userAgent,
@@ -90,18 +101,8 @@ export default function ControllerPage() {
             <div className="mb-4">
                 <p className="font-semibold">Adaptivity of Ringtone Volume:</p>
                 <div className="space-x-2 mt-2">
-                    <button
-                        className={`px-3 py-1 border rounded ${adaptivity === 'yes' ? 'bg-green-300' : 'bg-gray-200'}`}
-                        onClick={() => setAdaptivity('yes')}
-                    >
-                        Yes
-                    </button>
-                    <button
-                        className={`px-3 py-1 border rounded ${adaptivity === 'no' ? 'bg-red-300' : 'bg-gray-200'}`}
-                        onClick={() => setAdaptivity('no')}
-                    >
-                        No
-                    </button>
+                    <button className={`px-3 py-1 border rounded ${adaptivity === 'yes' ? 'bg-green-300' : 'bg-gray-200'}`} onClick={() => setAdaptivity('yes')}>Yes</button>
+                    <button className={`px-3 py-1 border rounded ${adaptivity === 'no' ? 'bg-red-300' : 'bg-gray-200'}`} onClick={() => setAdaptivity('no')}>No</button>
                 </div>
             </div>
 
@@ -121,49 +122,21 @@ export default function ControllerPage() {
             </div>
 
             <div className="space-y-4">
-                <div>
-                    <button
-                        className="px-4 py-2 bg-blue-500 text-white rounded"
-                        onClick={() => ringPhone('left')}
-                        disabled={ringingSide !== null}
-                    >
-                        Ring Left Phone
-                    </button>
-                    {ringingSide === 'left' && (
-                        <button
-                            className="ml-2 px-4 py-2 bg-red-500 text-white rounded"
-                            onClick={() => stopRing('left')}
-                        >
-                            Stop Ringing
+                {(['left', 'right'] as const).map((side) => (
+                    <div key={side}>
+                        <button className="px-4 py-2 bg-blue-500 text-white rounded" onClick={() => ringPhone(side)} disabled={ringingSide !== null}>
+                            Ring {side === 'left' ? 'Left' : 'Right'} Phone
                         </button>
-                    )}
-                </div>
-
-                <div>
-                    <button
-                        className="px-4 py-2 bg-blue-500 text-white rounded"
-                        onClick={() => ringPhone('right')}
-                        disabled={ringingSide !== null}
-                    >
-                        Ring Right Phone
-                    </button>
-                    {ringingSide === 'right' && (
-                        <button
-                            className="ml-2 px-4 py-2 bg-red-500 text-white rounded"
-                            onClick={() => stopRing('right')}
-                        >
-                            Stop Ringing
-                        </button>
-                    )}
-                </div>
+                        {ringingSide === side && (
+                            <button className="ml-2 px-4 py-2 bg-red-500 text-white rounded" onClick={() => stopRing(side)}>
+                                Stop Ringing
+                            </button>
+                        )}
+                    </div>
+                ))}
             </div>
 
-            <button
-                onClick={exitSession}
-                className="mt-6 bg-black text-white px-4 py-2 rounded"
-            >
-                Exit Session
-            </button>
+            <button onClick={exitSession} className="mt-6 bg-black text-white px-4 py-2 rounded">Exit Session</button>
         </div>
     );
 }

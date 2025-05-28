@@ -1,23 +1,24 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Ably from 'ably';
-import { Suspense } from 'react';
+import { logSessionData } from '@/utils/sessionLogger';
+import Cookies from "js-cookie";
 
-const ably = new Ably.Realtime({
-    key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
-    clientId: 'participant-client',
-});
+const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'participant-client' });
 
 function ParticipantInner() {
     const searchParams = useSearchParams();
-    const side = searchParams?.get('side');
+    const side = searchParams?.get('side') as 'left' | 'right' | null;
     const [ringing, setRinging] = useState(false);
     const [ringStartTime, setRingStartTime] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const sessionId = typeof window !== 'undefined' ? JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId : '';
+    const role = side === 'left' ? 'participant-left' : 'participant-right';
 
     useEffect(() => {
         if (!side) return;
+
         const channel = ably.channels.get('ring-channel');
 
         const ringHandler = (message: any) => {
@@ -27,7 +28,7 @@ function ParticipantInner() {
                     audio.loop = true;
                     audio.play();
                     audioRef.current = audio;
-                    setRingStartTime(message.data?.timestamp ?? Date.now());
+                    setRingStartTime(message.data.timestamp ?? Date.now());
                     setRinging(true);
                 }
             }
@@ -62,8 +63,17 @@ function ParticipantInner() {
     const pickup = () => {
         if (ringing && ringStartTime) {
             const pickupDelay = Date.now() - ringStartTime;
-            console.log(`Pickup delay: ${pickupDelay}ms`);
-            // TODO: send to Firebase
+
+            logSessionData({
+                sessionId,
+                role,
+                userAgent: navigator.userAgent,
+                event: 'pickup',
+                side: side ?? undefined,
+                pickupTimeMs: pickupDelay,
+            });
+
+            ably.channels.get('ring-channel').publish('pickup', { side });
             setRinging(false);
             audioRef.current?.pause();
             audioRef.current = null;
@@ -73,11 +83,7 @@ function ParticipantInner() {
     return (
         <div className="text-center p-6">
             <h1 className="text-2xl font-bold mb-4">Participant Mode</h1>
-            {side ? (
-                <p>This device is the <strong>{side}</strong> phone</p>
-            ) : (
-                <p className="text-red-500">Error: side not defined</p>
-            )}
+            <p>This device is the <strong>{side}</strong> phone</p>
             {ringing && (
                 <div>
                     <p className="text-green-600 mt-4 font-bold">Ringing!</p>
