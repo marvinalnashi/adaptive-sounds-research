@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Ably from 'ably';
 import { logSessionData } from '@/utils/sessionLogger';
+import { Timestamp } from 'firebase/firestore';
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'controller-client' });
 const channel = ably.channels.get('ring-channel');
@@ -18,22 +19,29 @@ export default function ControllerPage() {
 
     const sessionCookie = Cookies.get('ably-session');
     const sessionData = sessionCookie ? JSON.parse(sessionCookie) : null;
-    const sessionId = sessionData?.sessionId || '';
-    const role = sessionData?.role || 'controller';
+    const sessionId = sessionData?.sessionId || `session-${Date.now()}`;
+    const role = 'controller';
 
     useEffect(() => {
         const handlePickup = (message: any) => {
             if (message.name === 'pickup') {
                 const pickupTime = Date.now();
-                const duration = ringStartTime ? pickupTime - ringStartTime : null;
+                const duration = ringStartTime ? pickupTime - ringStartTime : undefined;
 
                 logSessionData({
                     sessionId,
                     role,
                     userAgent: navigator.userAgent,
-                    event: 'pickup',
-                    side: message.data.side,
-                    pickupTimeMs: duration || undefined,
+                    adaptiveVolume: adaptivity === 'yes',
+                    backgroundNoiseLevel: backgroundNoise,
+                    events: [
+                        {
+                            event: 'pickup',
+                            side: message.data.side,
+                            pickupTimeMs: duration,
+                            timestamp: Timestamp.now(),
+                        }
+                    ]
                 });
 
                 setRingingSide(null);
@@ -42,10 +50,7 @@ export default function ControllerPage() {
         };
 
         channel.subscribe('pickup', handlePickup);
-
-        return () => {
-            channel.unsubscribe('pickup', handlePickup);
-        };
+        return () => channel.unsubscribe('pickup', handlePickup);
     }, [ringStartTime]);
 
     const ringPhone = async (side: 'left' | 'right') => {
@@ -60,10 +65,13 @@ export default function ControllerPage() {
             sessionId,
             role,
             userAgent: navigator.userAgent,
-            event: 'ring',
-            side,
             adaptiveVolume: adaptivity === 'yes',
             backgroundNoiseLevel: backgroundNoise,
+            events: [{
+                event: 'ring',
+                side,
+                timestamp: Timestamp.now()
+            }]
         });
     };
 
@@ -76,8 +84,13 @@ export default function ControllerPage() {
             sessionId,
             role,
             userAgent: navigator.userAgent,
-            event: 'stop',
-            side,
+            adaptiveVolume: adaptivity === 'yes',
+            backgroundNoiseLevel: backgroundNoise,
+            events: [{
+                event: 'stop',
+                side,
+                timestamp: Timestamp.now()
+            }]
         });
     };
 
@@ -86,7 +99,12 @@ export default function ControllerPage() {
             sessionId,
             role,
             userAgent: navigator.userAgent,
-            event: 'exit',
+            adaptiveVolume: adaptivity === 'yes',
+            backgroundNoiseLevel: backgroundNoise,
+            events: [{
+                event: 'exit',
+                timestamp: Timestamp.now()
+            }]
         });
 
         Cookies.remove('ably-session');

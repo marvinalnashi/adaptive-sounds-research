@@ -1,42 +1,41 @@
-import { collection, doc, getDoc, setDoc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 
 export type Role = 'controller' | 'participant-left' | 'participant-right';
 
-export interface SessionLogEvent {
-    role: Role;
-    userAgent: string;
+export interface SessionEvent {
     event: 'start' | 'ring' | 'stop' | 'exit' | 'pickup';
-    timestamp?: Timestamp;
     side?: 'left' | 'right';
-    adaptiveVolume?: boolean;
-    backgroundNoiseLevel?: 1 | 2 | 3;
+    timestamp?: Timestamp;
     pickupTimeMs?: number;
 }
 
-export async function logSessionData(data: { sessionId: string } & SessionLogEvent) {
+export interface SessionDocument {
+    sessionId: string;
+    role: Role;
+    userAgent: string;
+    adaptiveVolume?: boolean;
+    backgroundNoiseLevel?: 1 | 2 | 3;
+    startedAt?: Timestamp;
+    endedAt?: Timestamp;
+    events: SessionEvent[];
+}
+
+export async function logSessionData(data: SessionDocument) {
     try {
-        const { sessionId, ...event } = data;
-        const sessionRef = doc(collection(db, 'sessions'), sessionId);
-        const sessionDoc = await getDoc(sessionRef);
+        const sessionRef = doc(db, 'sessions', data.sessionId);
 
-        const eventWithTimestamp = {
-            ...event,
-            timestamp: event.timestamp ?? Timestamp.now(),
-        };
+        await setDoc(sessionRef, {
+            ...data,
+            startedAt: data.startedAt ?? Timestamp.now(),
+            endedAt: data.endedAt ?? Timestamp.now(),
+            events: data.events.map((e) => ({
+                ...e,
+                timestamp: e.timestamp ?? Timestamp.now(),
+            })),
+        });
 
-        if (!sessionDoc.exists()) {
-            await setDoc(sessionRef, {
-                sessionId,
-                events: [eventWithTimestamp],
-            });
-        } else {
-            await updateDoc(sessionRef, {
-                events: arrayUnion(eventWithTimestamp),
-            });
-        }
-
-        console.log('Session event logged:', eventWithTimestamp);
+        console.log('Session logged:', data);
     } catch (err) {
         console.error('Failed to log session:', err);
     }

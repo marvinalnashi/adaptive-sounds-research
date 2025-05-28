@@ -1,11 +1,14 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Ably from 'ably';
+import Cookies from 'js-cookie';
+import { v4 as uuidv4 } from 'uuid';
 
 const ably = new Ably.Realtime({
     key: process.env.NEXT_PUBLIC_ABLY_API_KEY!,
-    clientId: 'lobby-client',
+    clientId: `lobby-client-${uuidv4()}`,
 });
 
 const channelName = 'role-selection';
@@ -19,9 +22,13 @@ export default function LobbyPage() {
         const channel = ably.channels.get(channelName);
 
         const handleMessage = (message: any) => {
-            if (message.data && !connectedRoles.includes(message.data)) {
-                setConnectedRoles((prev) => [...prev, message.data]);
-            }
+            const newRole = message.data;
+            setConnectedRoles((prev) => {
+                if (!prev.includes(newRole)) {
+                    return [...prev, newRole];
+                }
+                return prev;
+            });
         };
 
         channel.subscribe('role', handleMessage);
@@ -29,7 +36,7 @@ export default function LobbyPage() {
         return () => {
             channel.unsubscribe('role', handleMessage);
         };
-    }, [connectedRoles]);
+    }, []);
 
     useEffect(() => {
         if (
@@ -38,6 +45,9 @@ export default function LobbyPage() {
             connectedRoles.includes('participant-left') &&
             connectedRoles.includes('participant-right')
         ) {
+            const sessionId = uuidv4();
+            Cookies.set('ably-session', JSON.stringify({ role, sessionId }), { expires: 1 });
+
             if (role === 'controller') router.push('/controller');
             if (role === 'participant-left') router.push('/participant?side=left');
             if (role === 'participant-right') router.push('/participant?side=right');
@@ -64,8 +74,8 @@ export default function LobbyPage() {
                 </div>
             )}
             {role && (
-                <p>
-                    You have entered as <strong>{role}</strong>
+                <p className="mt-4">
+                    You have entered as <strong>{role}</strong>. Waiting for all roles to join...
                 </p>
             )}
         </div>

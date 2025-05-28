@@ -1,9 +1,11 @@
 'use client';
+
 import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Ably from 'ably';
 import { logSessionData } from '@/utils/sessionLogger';
-import Cookies from "js-cookie";
+import Cookies from 'js-cookie';
+import { Timestamp } from 'firebase/firestore';
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'participant-client' });
 
@@ -13,7 +15,8 @@ function ParticipantInner() {
     const [ringing, setRinging] = useState(false);
     const [ringStartTime, setRingStartTime] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-    const sessionId = typeof window !== 'undefined' ? JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId : '';
+
+    const sessionId = JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId || `session-${Date.now()}`;
     const role = side === 'left' ? 'participant-left' : 'participant-right';
 
     useEffect(() => {
@@ -28,7 +31,7 @@ function ParticipantInner() {
                     audio.loop = true;
                     audio.play();
                     audioRef.current = audio;
-                    setRingStartTime(message.data.timestamp ?? Date.now());
+                    setRingStartTime(Date.now());
                     setRinging(true);
                 }
             }
@@ -68,9 +71,12 @@ function ParticipantInner() {
                 sessionId,
                 role,
                 userAgent: navigator.userAgent,
-                event: 'pickup',
-                side: side ?? undefined,
-                pickupTimeMs: pickupDelay,
+                events: [{
+                    event: 'pickup',
+                    side: side ?? undefined,
+                    pickupTimeMs: pickupDelay,
+                    timestamp: Timestamp.now()
+                }]
             });
 
             ably.channels.get('ring-channel').publish('pickup', { side });
