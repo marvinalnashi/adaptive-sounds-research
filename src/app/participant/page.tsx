@@ -16,11 +16,13 @@ function ParticipantInner() {
     const [ringStartTime, setRingStartTime] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    const sessionId = JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId || `session-${Date.now()}`;
+    const sessionCookie = Cookies.get('ably-session');
+    const sessionData = sessionCookie ? JSON.parse(sessionCookie) : {};
+    const sessionId = sessionData.sessionId;
     const role = side === 'left' ? 'participant-left' : 'participant-right';
 
     useEffect(() => {
-        if (!side) return;
+        if (!side || !sessionId) return;
 
         const channel = ably.channels.get('ring-channel');
 
@@ -61,10 +63,10 @@ function ParticipantInner() {
             channel.unsubscribe('stop', stopHandler);
             channel.unsubscribe('reset', resetHandler);
         };
-    }, [side, ringing]);
+    }, [side, ringing, sessionId]);
 
     const pickup = () => {
-        if (ringing && ringStartTime) {
+        if (ringing && ringStartTime && side) {
             const pickupDelay = Date.now() - ringStartTime;
 
             logSessionData({
@@ -73,7 +75,7 @@ function ParticipantInner() {
                 userAgent: navigator.userAgent,
                 events: [{
                     event: 'pickup',
-                    side: side ?? undefined,
+                    side,
                     pickupTimeMs: pickupDelay,
                     timestamp: Timestamp.now()
                 }]

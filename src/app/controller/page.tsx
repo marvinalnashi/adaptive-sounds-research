@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Ably from 'ably';
-import { logSessionData } from '@/utils/sessionLogger';
-import { Timestamp } from 'firebase/firestore';
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'controller-client' });
 const channel = ably.channels.get('ring-channel');
@@ -19,31 +17,11 @@ export default function ControllerPage() {
 
     const sessionCookie = Cookies.get('ably-session');
     const sessionData = sessionCookie ? JSON.parse(sessionCookie) : null;
-    const sessionId = sessionData?.sessionId || `session-${Date.now()}`;
-    const role = 'controller';
+    const sessionId = sessionData?.sessionId;
 
     useEffect(() => {
         const handlePickup = (message: any) => {
             if (message.name === 'pickup') {
-                const pickupTime = Date.now();
-                const duration = ringStartTime ? pickupTime - ringStartTime : undefined;
-
-                logSessionData({
-                    sessionId,
-                    role,
-                    userAgent: navigator.userAgent,
-                    adaptiveVolume: adaptivity === 'yes',
-                    backgroundNoiseLevel: backgroundNoise,
-                    events: [
-                        {
-                            event: 'pickup',
-                            side: message.data.side,
-                            pickupTimeMs: duration,
-                            timestamp: Timestamp.now(),
-                        }
-                    ]
-                });
-
                 setRingingSide(null);
                 setRingStartTime(null);
             }
@@ -53,62 +31,23 @@ export default function ControllerPage() {
         return () => channel.unsubscribe('pickup', handlePickup);
     }, [ringStartTime]);
 
-    const ringPhone = async (side: 'left' | 'right') => {
+    const ringPhone = (side: 'left' | 'right') => {
         if (ringingSide) return;
         const timestamp = Date.now();
-
         channel.publish('ring', { side, timestamp });
         setRingingSide(side);
         setRingStartTime(timestamp);
-
-        await logSessionData({
-            sessionId,
-            role,
-            userAgent: navigator.userAgent,
-            adaptiveVolume: adaptivity === 'yes',
-            backgroundNoiseLevel: backgroundNoise,
-            events: [{
-                event: 'ring',
-                side,
-                timestamp: Timestamp.now()
-            }]
-        });
     };
 
-    const stopRing = async (side: 'left' | 'right') => {
+    const stopRing = (side: 'left' | 'right') => {
         channel.publish('stop', { side });
         setRingingSide(null);
         setRingStartTime(null);
-
-        await logSessionData({
-            sessionId,
-            role,
-            userAgent: navigator.userAgent,
-            adaptiveVolume: adaptivity === 'yes',
-            backgroundNoiseLevel: backgroundNoise,
-            events: [{
-                event: 'stop',
-                side,
-                timestamp: Timestamp.now()
-            }]
-        });
     };
 
-    const exitSession = async () => {
-        await logSessionData({
-            sessionId,
-            role,
-            userAgent: navigator.userAgent,
-            adaptiveVolume: adaptivity === 'yes',
-            backgroundNoiseLevel: backgroundNoise,
-            events: [{
-                event: 'exit',
-                timestamp: Timestamp.now()
-            }]
-        });
-
-        Cookies.remove('ably-session');
+    const exitSession = () => {
         channel.publish('reset', {});
+        Cookies.remove('ably-session');
         router.push('/');
     };
 
