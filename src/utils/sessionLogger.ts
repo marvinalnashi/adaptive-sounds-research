@@ -17,51 +17,62 @@ export interface SessionDocument {
     userAgent: string;
     adaptiveVolume?: boolean;
     backgroundNoiseLevel?: 1 | 2 | 3;
+    startedAt?: Timestamp;
+    endedAt?: Timestamp;
     events: SessionEvent[];
 }
 
 export async function logSessionData(data: SessionDocument) {
     try {
-        if (!data.role.startsWith('participant')) return;
+        if (data.role === 'controller') return;
 
         const sessionRef = doc(db, 'sessions', data.sessionId);
-        const sessionSnap = await getDoc(sessionRef);
-        const existingData = sessionSnap.exists() ? sessionSnap.data() : {};
+        const existingDoc = await getDoc(sessionRef);
 
-        const existingEvents: SessionEvent[] = existingData.events || [];
+        let existingData: any = existingDoc.exists() ? existingDoc.data() : {
+            sessionId: data.sessionId,
+            events: [],
+            userAgents: {},
+        };
 
-        const newEvents = data.events.map(event => ({
-            ...event,
-            timestamp: event.timestamp ?? Timestamp.now()
-        }));
+        const newEvents = data.events.map((event) => {
+            const timestamp = event.timestamp ?? Timestamp.now();
 
-        for (const event of newEvents) {
-            if (event.event === 'pickup') {
-                const ringEvent = existingEvents.find(
-                    e => e.event === 'ring' && e.side === event.side
+            let ringToPickupDurationMs: number | undefined;
+
+            if (event.event === 'pickup' && event.side) {
+                const matchingRing = existingData.events.find(
+                    (e: SessionEvent) => e.event === 'ring' && e.side === event.side && e.timestamp
                 );
-                if (ringEvent && ringEvent.timestamp && event.timestamp) {
-                    event.ringToPickupDurationMs = event.timestamp.toMillis() - ringEvent.timestamp.toMillis();
+                if (matchingRing && matchingRing.timestamp) {
+                    ringToPickupDurationMs = timestamp.toMillis() - matchingRing.timestamp.toMillis();
                 }
             }
-        }
 
-        const mergedEvents = [...existingEvents, ...newEvents];
+            return {
+                ...event,
+                timestamp,
+                ringToPickupDurationMs,
+            };
+        });
+
+        const updatedEvents = [...existingData.events, ...newEvents];
 
         const updatedData = {
+            ...existingData,
             sessionId: data.sessionId,
             adaptiveVolume: data.adaptiveVolume ?? existingData.adaptiveVolume,
             backgroundNoiseLevel: data.backgroundNoiseLevel ?? existingData.backgroundNoiseLevel,
             startedAt: existingData.startedAt ?? Timestamp.now(),
             endedAt: Timestamp.now(),
-            events: mergedEvents,
+            events: updatedEvents,
             userAgents: {
-                ...(existingData.userAgents || {}),
-                [data.role]: data.userAgent
-            }
+                ...existingData.userAgents,
+                [data.role]: data.userAgent,
+            },
         };
 
-        await setDoc(sessionRef, updatedData, { merge: true });
+        await setDoc(sessionRef, updatedData);
         console.log('Session logged:', data.sessionId);
     } catch (err) {
         console.error('Failed to log session:', err);
