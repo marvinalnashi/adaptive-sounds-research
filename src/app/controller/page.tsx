@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Cookies from 'js-cookie';
 import Ably from 'ably';
-import {logSessionData} from "@/utils/sessionLogger";
 import {Timestamp} from "firebase/firestore";
 
 const ably = new Ably.Realtime({ key: process.env.NEXT_PUBLIC_ABLY_API_KEY!, clientId: 'controller-client' });
@@ -48,20 +47,6 @@ export default function ControllerPage() {
     };
 
     const exitSession = () => {
-        if (sessionId) {
-            logSessionData({
-                sessionId,
-                role: 'controller',
-                userAgent: navigator.userAgent,
-                adaptiveVolume: adaptivity === 'yes',
-                backgroundNoiseLevel: backgroundNoise,
-                events: [{
-                    event: 'exit',
-                    timestamp: Timestamp.now(),
-                }]
-            });
-        }
-
         channel.publish('reset', {});
         Cookies.remove('ably-session');
         router.push('/');
