@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 
 export type Role = 'controller' | 'participant-left' | 'participant-right';
@@ -8,7 +8,6 @@ export interface SessionEvent {
     side?: 'left' | 'right';
     timestamp?: Timestamp;
     pickupTimeMs?: number;
-    ringToPickupDurationMs?: number;
 }
 
 export interface SessionDocument {
@@ -23,58 +22,63 @@ export interface SessionDocument {
 }
 
 export async function logSessionData(data: SessionDocument) {
+    if (!data.sessionId) {
+        console.error('Session ID is required');
+        return;
+    }
+
+    const sessionRef = doc(db, 'sessions', data.sessionId);
+
     try {
-        if (data.role === 'controller') return;
+        const docSnap = await getDoc(sessionRef);
 
-        const sessionRef = doc(db, 'sessions', data.sessionId);
-        const existingDoc = await getDoc(sessionRef);
+        if (docSnap.exists()) {
+            const existingData = docSnap.data();
 
-        let existingData: any = existingDoc.exists() ? existingDoc.data() : {
-            sessionId: data.sessionId,
-            events: [],
-            userAgents: {},
-        };
+            const mergedEvents = [
+                ...(existingData.events || []),
+                ...data.events.map((e) => ({
+                    ...e,
+                    timestamp: e.timestamp ?? Timestamp.now(),
+                })),
+            ];
 
-        const newEvents = data.events.map((event) => {
-            const timestamp = event.timestamp ?? Timestamp.now();
-
-            let ringToPickupDurationMs: number | undefined;
-
-            if (event.event === 'pickup' && event.side) {
-                const matchingRing = existingData.events.find(
-                    (e: SessionEvent) => e.event === 'ring' && e.side === event.side && e.timestamp
-                );
-                if (matchingRing && matchingRing.timestamp) {
-                    ringToPickupDurationMs = timestamp.toMillis() - matchingRing.timestamp.toMillis();
-                }
+            const pickupEvent = mergedEvents.find((e) => e.event === 'pickup');
+            let delayMs: number | undefined;
+            if (pickupEvent && data.startedAt) {
+                const start = data.startedAt.toMillis();
+                const end = pickupEvent.timestamp?.toMillis();
+                if (end && start) delayMs = end - start;
             }
 
-            return {
-                ...event,
-                timestamp,
-                ringToPickupDurationMs,
-            };
-        });
+            await updateDoc(sessionRef, {
+                userAgents: Array.from(new Set([...(existingData.userAgents || []), data.userAgent])),
+                adaptiveVolume: data.adaptiveVolume ?? existingData.adaptiveVolume,
+                backgroundNoiseLevel: data.backgroundNoiseLevel ?? existingData.backgroundNoiseLevel,
+                startedAt: existingData.startedAt ?? data.startedAt ?? Timestamp.now(),
+                endedAt: Timestamp.now(),
+                pickupDelayMs: delayMs ?? existingData.pickupDelayMs,
+                events: mergedEvents,
+            });
+        } else {
+            await setDoc(sessionRef, {
+                sessionId: data.sessionId,
+                userAgents: [data.userAgent],
+                role: data.role,
+                adaptiveVolume: data.adaptiveVolume ?? null,
+                backgroundNoiseLevel: data.backgroundNoiseLevel ?? null,
+                startedAt: data.startedAt ?? Timestamp.now(),
+                endedAt: data.endedAt ?? Timestamp.now(),
+                pickupDelayMs: data.events.find(e => e.event === 'pickup')?.pickupTimeMs ?? null,
+                events: data.events.map((e) => ({
+                    ...e,
+                    timestamp: e.timestamp ?? Timestamp.now(),
+                })),
+            });
+        }
 
-        const updatedEvents = [...existingData.events, ...newEvents];
-
-        const updatedData = {
-            ...existingData,
-            sessionId: data.sessionId,
-            adaptiveVolume: data.adaptiveVolume ?? existingData.adaptiveVolume,
-            backgroundNoiseLevel: data.backgroundNoiseLevel ?? existingData.backgroundNoiseLevel,
-            startedAt: existingData.startedAt ?? Timestamp.now(),
-            endedAt: Timestamp.now(),
-            events: updatedEvents,
-            userAgents: {
-                ...existingData.userAgents,
-                [data.role]: data.userAgent,
-            },
-        };
-
-        await setDoc(sessionRef, updatedData);
-        console.log('Session logged:', data.sessionId);
+        console.log('Session successfully logged to Firestore:', data.sessionId);
     } catch (err) {
-        console.error('Failed to log session:', err);
+        console.error('Error logging session:', err);
     }
 }
