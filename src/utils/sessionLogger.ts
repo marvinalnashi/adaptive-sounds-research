@@ -25,10 +25,8 @@ export async function logSessionData(data: SessionDocument) {
     try {
         const docSnap = await getDoc(sessionRef);
 
-        const delayKey = data.role === 'participant-left' ? 'pickupDelayLeftMs' : 'pickupDelayRightMs';
         const pickupEvent = data.events.find(e => e.event === 'pickup');
-
-        if (!pickupEvent) return;
+        if (!pickupEvent || pickupEvent.pickupTimeMs < 0) return;
 
         const eventPayload = {
             ...pickupEvent,
@@ -42,7 +40,6 @@ export async function logSessionData(data: SessionDocument) {
             await updateDoc(sessionRef, {
                 userAgents: Array.from(new Set([...(existing.userAgents || []), data.userAgent])),
                 events: [...(existing.events || []), eventPayload],
-                [delayKey]: pickupEvent.pickupTimeMs,
             });
         } else {
             await setDoc(sessionRef, {
@@ -51,7 +48,6 @@ export async function logSessionData(data: SessionDocument) {
                 adaptiveVolume: data.adaptiveVolume ?? null,
                 backgroundNoiseLevel: data.backgroundNoiseLevel ?? null,
                 events: [eventPayload],
-                [delayKey]: pickupEvent.pickupTimeMs,
             });
         }
 

@@ -67,6 +67,8 @@ function ParticipantInner() {
         const pickupTimestamp = Date.now();
         const pickupDelay = pickupTimestamp - ringStartTime;
 
+        if (pickupDelay < 0) return;
+
         logSessionData({
             sessionId: sessionInfo.sessionId,
             role,
@@ -78,7 +80,7 @@ function ParticipantInner() {
                 pickupTimeMs: pickupDelay,
             }],
             adaptiveVolume: sessionInfo.adaptiveVolume,
-            backgroundNoiseLevel: sessionInfo.backgroundNoiseLevel
+            backgroundNoiseLevel: sessionInfo.backgroundNoiseLevel,
         });
 
         channel.publish('pickup', { side });
@@ -86,7 +88,7 @@ function ParticipantInner() {
         audioRef.current?.pause();
         audioRef.current = null;
     };
-
+    
     return (
         <div className="text-center p-6">
             <h1 className="text-2xl font-bold mb-4">Participant Mode</h1>
