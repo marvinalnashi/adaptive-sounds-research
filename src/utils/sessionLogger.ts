@@ -1,13 +1,12 @@
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, arrayUnion, Timestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 
 export type Role = 'controller' | 'participant-left' | 'participant-right';
 
-export interface SessionLog {
-    sessionId: string;
+export interface SessionLogEntry {
     role: Role;
     userAgent: string;
-    timestamp?: Timestamp;
+    timestamp: Timestamp;
     event: 'start' | 'ring' | 'stop' | 'exit' | 'pickup';
     side?: 'left' | 'right';
     adaptiveVolume?: boolean;
@@ -15,14 +14,22 @@ export interface SessionLog {
     pickupTimeMs?: number;
 }
 
-export async function logSessionData(data: SessionLog) {
+export async function logSessionData(data: Omit<SessionLogEntry, 'timestamp'> & { sessionId: string }) {
     try {
-        const log: Omit<SessionLog, 'timestamp'> & { timestamp: Timestamp } = {
-            ...data,
-            timestamp: data.timestamp ?? Timestamp.now(),
+        const { sessionId, ...entry } = data;
+        const logEntry: SessionLogEntry = {
+            ...entry,
+            timestamp: Timestamp.now(),
         };
-        await addDoc(collection(db, 'sessions'), log);
-        console.log('Session data logged:', log);
+
+        const docRef = doc(db, 'sessions', sessionId);
+
+        await setDoc(docRef, { sessionId }, { merge: true });
+        await updateDoc(docRef, {
+            events: arrayUnion(logEntry),
+        });
+
+        console.log('Session data logged:', logEntry);
     } catch (err) {
         console.error('Failed to log session:', err);
     }
