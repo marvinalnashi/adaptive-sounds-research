@@ -28,40 +28,41 @@ export async function logSessionData(data: SessionDocument) {
         const sessionSnap = await getDoc(sessionRef);
         const existingData = sessionSnap.exists() ? sessionSnap.data() : {};
 
-        const allEvents = [
-            ...(existingData.events || []),
-            ...data.events.map(e => ({
-                ...e,
-                timestamp: e.timestamp ?? Timestamp.now(),
-            })),
-        ];
+        const existingEvents: SessionEvent[] = existingData.events || [];
 
-        const startedAt = allEvents[0]?.timestamp ?? Timestamp.now();
-        const endedAt = Timestamp.now();
+        const newEvents = data.events.map(event => ({
+            ...event,
+            timestamp: event.timestamp ?? Timestamp.now()
+        }));
 
-        const ringEvent = allEvents.find(e => e.event === 'ring' && e.side === data.events[0]?.side);
-        const pickupEvent = data.events.find(e => e.event === 'pickup');
-
-        if (ringEvent && pickupEvent && !pickupEvent.ringToPickupDurationMs) {
-            pickupEvent.ringToPickupDurationMs =
-                (pickupEvent.timestamp?.toMillis() || 0) - (ringEvent.timestamp?.toMillis() || 0);
+        for (const event of newEvents) {
+            if (event.event === 'pickup') {
+                const ringEvent = existingEvents.find(
+                    e => e.event === 'ring' && e.side === event.side
+                );
+                if (ringEvent && ringEvent.timestamp && event.timestamp) {
+                    event.ringToPickupDurationMs = event.timestamp.toMillis() - ringEvent.timestamp.toMillis();
+                }
+            }
         }
+
+        const mergedEvents = [...existingEvents, ...newEvents];
 
         const updatedData = {
             sessionId: data.sessionId,
             adaptiveVolume: data.adaptiveVolume ?? existingData.adaptiveVolume,
             backgroundNoiseLevel: data.backgroundNoiseLevel ?? existingData.backgroundNoiseLevel,
-            startedAt,
-            endedAt,
-            events: allEvents,
+            startedAt: existingData.startedAt ?? Timestamp.now(),
+            endedAt: Timestamp.now(),
+            events: mergedEvents,
             userAgents: {
                 ...(existingData.userAgents || {}),
-                [data.role]: data.userAgent,
-            },
+                [data.role]: data.userAgent
+            }
         };
 
         await setDoc(sessionRef, updatedData, { merge: true });
-        console.log('Session logged successfully:', data.sessionId);
+        console.log('Session logged:', data.sessionId);
     } catch (err) {
         console.error('Failed to log session:', err);
     }
