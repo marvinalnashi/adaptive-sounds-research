@@ -8,8 +8,11 @@ export interface SessionLog {
     role: Role;
     userAgent: string;
     timestamp?: Timestamp;
-    event: 'start' | 'ring' | 'stop' | 'exit';
+    event: 'start' | 'ring' | 'stop' | 'exit' | 'pickup';
     side?: 'left' | 'right';
+    adaptiveVolume?: boolean;
+    backgroundNoiseLevel?: 1 | 2 | 3;
+    pickupTimeMs?: number;
 }
 
 export async function logSessionData(data: SessionLog) {

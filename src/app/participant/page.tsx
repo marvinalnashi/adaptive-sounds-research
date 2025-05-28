@@ -13,11 +13,11 @@ function ParticipantInner() {
     const searchParams = useSearchParams();
     const side = searchParams?.get('side');
     const [ringing, setRinging] = useState(false);
+    const [ringStartTime, setRingStartTime] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         if (!side) return;
-
         const channel = ably.channels.get('ring-channel');
 
         const ringHandler = (message: any) => {
@@ -27,6 +27,7 @@ function ParticipantInner() {
                     audio.loop = true;
                     audio.play();
                     audioRef.current = audio;
+                    setRingStartTime(message.data?.timestamp ?? Date.now());
                     setRinging(true);
                 }
             }
@@ -34,11 +35,9 @@ function ParticipantInner() {
 
         const stopHandler = (message: any) => {
             if (message.name === 'stop' && message.data?.side === side) {
-                if (audioRef.current) {
-                    audioRef.current.pause();
-                    audioRef.current.currentTime = 0;
-                    setRinging(false);
-                }
+                audioRef.current?.pause();
+                audioRef.current = null;
+                setRinging(false);
             }
         };
 
@@ -60,6 +59,17 @@ function ParticipantInner() {
         };
     }, [side, ringing]);
 
+    const pickup = () => {
+        if (ringing && ringStartTime) {
+            const pickupDelay = Date.now() - ringStartTime;
+            console.log(`Pickup delay: ${pickupDelay}ms`);
+            // TODO: send to Firebase
+            setRinging(false);
+            audioRef.current?.pause();
+            audioRef.current = null;
+        }
+    };
+
     return (
         <div className="text-center p-6">
             <h1 className="text-2xl font-bold mb-4">Participant Mode</h1>
@@ -68,7 +78,14 @@ function ParticipantInner() {
             ) : (
                 <p className="text-red-500">Error: side not defined</p>
             )}
-            {ringing && <p className="text-green-600 mt-4 font-bold">Ringing!</p>}
+            {ringing && (
+                <div>
+                    <p className="text-green-600 mt-4 font-bold">Ringing!</p>
+                    <button onClick={pickup} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Pickup
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
