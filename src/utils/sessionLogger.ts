@@ -17,8 +17,6 @@ export interface SessionDocument {
     userAgent: string;
     adaptiveVolume?: boolean;
     backgroundNoiseLevel?: 1 | 2 | 3;
-    startedAt?: Timestamp;
-    endedAt?: Timestamp;
     events: SessionEvent[];
 }
 
@@ -29,42 +27,36 @@ export async function logSessionData(data: SessionDocument) {
         const sessionRef = doc(db, 'sessions', data.sessionId);
         const sessionSnap = await getDoc(sessionRef);
 
-        let existing: Partial<SessionDocument> = sessionSnap.exists() ? sessionSnap.data() as SessionDocument : {
-            sessionId: data.sessionId,
-            events: [],
-        };
+        let existingData: any = sessionSnap.exists() ? sessionSnap.data() : {};
 
-        const newEvents = data.events.map(e => ({
+        const allEvents = [...(existingData.events || []), ...data.events.map(e => ({
             ...e,
             timestamp: e.timestamp ?? Timestamp.now(),
-        }));
+        }))];
 
-        const allEvents = [...(existing.events || []), ...newEvents];
+        const startedAt = allEvents[0]?.timestamp || Timestamp.now();
+        const endedAt = Timestamp.now();
 
-        const pickup = newEvents.find(e => e.event === 'pickup');
-        if (pickup?.timestamp) {
-            const ring = allEvents.find(e =>
-                e.event === 'ring' && e.side === pickup.side
-            );
-            if (ring?.timestamp) {
-                pickup.ringToPickupDurationMs = pickup.timestamp.toMillis() - ring.timestamp.toMillis();
-            }
+        const ringEvent = allEvents.find(e => e.event === 'ring' && e.side === data.events[0].side);
+        const pickupEvent = data.events.find(e => e.event === 'pickup');
+
+        if (ringEvent && pickupEvent) {
+            pickupEvent.ringToPickupDurationMs =
+                pickupEvent.timestamp?.toMillis()! - ringEvent.timestamp?.toMillis()!;
         }
 
-        const mergedDoc: SessionDocument = {
+        await setDoc(sessionRef, {
             sessionId: data.sessionId,
             userAgent: data.userAgent,
             role: data.role,
-            adaptiveVolume: data.adaptiveVolume ?? existing.adaptiveVolume,
-            backgroundNoiseLevel: data.backgroundNoiseLevel ?? existing.backgroundNoiseLevel,
-            startedAt: existing.startedAt ?? Timestamp.now(),
-            endedAt: Timestamp.now(),
+            adaptiveVolume: data.adaptiveVolume,
+            backgroundNoiseLevel: data.backgroundNoiseLevel,
+            startedAt,
+            endedAt,
             events: allEvents,
-        };
+        });
 
-        await setDoc(sessionRef, mergedDoc);
-        console.log('Session saved:', mergedDoc);
-
+        console.log('Session logged:', data.sessionId);
     } catch (err) {
         console.error('Failed to log session:', err);
     }
