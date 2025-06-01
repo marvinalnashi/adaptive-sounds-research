@@ -14,6 +14,7 @@ export default function ControllerPage() {
     const [ringStartTime, setRingStartTime] = useState<number | null>(null);
     const [adaptivity, setAdaptivity] = useState<'yes' | 'no'>('no');
     const [backgroundNoise, setBackgroundNoise] = useState<1 | 2 | 3>(1);
+    const [micVolume, setMicVolume] = useState<number>(0);  // Volume variable for the microphones' input sound
 
     const sessionId = JSON.parse(Cookies.get('ably-session') || '{}')?.sessionId;
 
@@ -28,6 +29,52 @@ export default function ControllerPage() {
         channel.subscribe('pickup', handlePickup);
         return () => channel.unsubscribe('pickup', handlePickup);
     }, []);
+
+    const getAudioContext = () => {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContext) {
+            console.error('Web Audio API not supported.');
+            return null;
+        }
+        return new AudioContext();
+    }
+
+    useEffect(() => {
+        // Microphone setup for getting the volume level of the surroundings
+        // https://dev.to/tooleroid/building-a-real-time-microphone-level-meter-using-web-audio-api-a-complete-guide-1e0b
+        const micSetup = async() => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const audioContext = getAudioContext();
+                if (!audioContext) return;
+
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 2048;
+
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                const data = new Float32Array(analyser.fftSize);
+
+                const updateVolume = () => {
+                    analyser.getFloatTimeDomainData(data);
+                    const rms = Math.sqrt(data.reduce((acc, val) => acc + val * val, 0) / data.length);
+                    const dbfs = 20 * Math.log10(rms + 1e-8);
+
+                    // TODO: Maybe add the min and max decibel as on the website, for now -160 seems to be minimum and 0 is maximum
+                    setMicVolume(dbfs);
+                    // console.log('Microphone Volume (dBFS):', dbfs);
+                    requestAnimationFrame(updateVolume);  // NOTE: Under 'Smooth Animation and Updates' this apparently calls the next frame. At this point I don't fully understand
+                }
+
+                updateVolume();
+            } catch (error) {
+                console.error('Mic not accepted or error occurred:', error);
+            }
+        };
+
+        micSetup();
+    })
 
     const ringPhone = (side: 'left' | 'right') => {
         if (ringingSide || !sessionId) return;
@@ -96,6 +143,13 @@ export default function ControllerPage() {
                         )}
                     </div>
                 ))}
+            </div>
+
+            <div className="mb-4">
+                <p className="font-semibold">Microphone Volume Level:</p>
+                <div className="mt-2">
+                    <span className="text-gray-700">{micVolume.toFixed(2)} dB</span>
+                </div>
             </div>
 
             <button onClick={exitSession} className="mt-6 bg-black text-white px-4 py-2 rounded">Exit Session</button>
