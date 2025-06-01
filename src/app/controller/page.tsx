@@ -56,18 +56,27 @@ export default function ControllerPage() {
 
                 const data = new Float32Array(analyser.fftSize);
 
-                const updateVolume = () => {
+                // Code for continuous updates -=-=-=-=-=-=-=-=-=-=-
+                // const updateVolume = () => {
+                //     analyser.getFloatTimeDomainData(data);
+                //     const rms = Math.sqrt(data.reduce((acc, val) => acc + val * val, 0) / data.length);
+                //     const dbfs = 20 * Math.log10(rms + 1e-8);
+
+                //     // TODO: Maybe add the min and max decibel as on the website, for now -160 seems to be minimum and 0 is maximum
+                //     setMicVolume(dbfs);
+                //     // console.log('Microphone Volume (dBFS):', dbfs);
+                //     requestAnimationFrame(updateVolume);  // NOTE: Under 'Smooth Animation and Updates' this apparently calls the next frame. At this point I don't fully understand
+                // }
+                // updateVolume();
+
+                // Code for updates at an interval -=-=-=-=-=-=-=-=-=-=-
+                const updateVolume = setInterval(() => {
                     analyser.getFloatTimeDomainData(data);
                     const rms = Math.sqrt(data.reduce((acc, val) => acc + val * val, 0) / data.length);
                     const dbfs = 20 * Math.log10(rms + 1e-8);
 
-                    // TODO: Maybe add the min and max decibel as on the website, for now -160 seems to be minimum and 0 is maximum
                     setMicVolume(dbfs);
-                    // console.log('Microphone Volume (dBFS):', dbfs);
-                    requestAnimationFrame(updateVolume);  // NOTE: Under 'Smooth Animation and Updates' this apparently calls the next frame. At this point I don't fully understand
-                }
-
-                updateVolume();
+                }, 200); // Update every ...ms
             } catch (error) {
                 console.error('Mic not accepted or error occurred:', error);
             }
